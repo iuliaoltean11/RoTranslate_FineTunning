@@ -1,0 +1,185 @@
+import requests
+from bs4 import BeautifulSoup
+import pandas as pd
+import time
+import json
+from pathlib import Path
+import re
+from typing import List, Dict, Tuple
+
+
+class TechnicalDocumentScraper:
+    def __init__(self):
+        self.session = requests.Session()
+        self.session.headers.update({
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        })
+
+    def scrape_wikipedia_tech_articles(self) -> List[Dict]:
+        """Scrape technical articles from Romanian and English Wikipedia"""
+
+        # Technical topics with RO-EN pairs
+        tech_topics = [
+            ("Inteligență_artificială", "Artificial_intelligence"),
+            ("Blockchain", "Blockchain"),
+            ("Învățare_automată", "Machine_learning"),
+            ("Algoritm", "Algorithm"),
+            ("Bază_de_date", "Database"),
+            ("Rețea_neurală", "Neural_network"),
+            ("Criptografie", "Cryptography"),
+            ("Sistem_de_operare", "Operating_system"),
+            ("Programare", "Computer_programming"),
+            ("Securitate_informatică", "Computer_security")
+        ]
+
+        data = []
+
+        for ro_topic, en_topic in tech_topics:
+            try:
+                # Get Romanian content
+                ro_url = f"https://ro.wikipedia.org/wiki/{ro_topic}"
+                ro_response = self.session.get(ro_url)
+                ro_soup = BeautifulSoup(ro_response.content, 'html.parser')
+
+                # Get English content
+                en_url = f"https://en.wikipedia.org/wiki/{en_topic}"
+                en_response = self.session.get(en_url)
+                en_soup = BeautifulSoup(en_response.content, 'html.parser')
+
+                # Extract paragraphs
+                ro_paragraphs = self._extract_paragraphs(ro_soup)
+                en_paragraphs = self._extract_paragraphs(en_soup)
+
+                # Create parallel pairs (approximate alignment)
+                for i, ro_text in enumerate(ro_paragraphs[:5]):  # First 5 paragraphs
+                    if i < len(en_paragraphs):
+                        en_text = en_paragraphs[i]
+
+                        data.append({
+                            'source': ro_text,
+                            'target': en_text,
+                            'domain': 'technology',
+                            'source_url': ro_url,
+                            'target_url': en_url,
+                            'topic': ro_topic
+                        })
+
+                print(f" Scraped {ro_topic} - {len(ro_paragraphs)} paragraphs")
+                time.sleep(2)  # Be respectful to servers
+
+            except Exception as e:
+                print(f" Error scraping {ro_topic}: {e}")
+                continue
+
+        return data
+
+    def _extract_paragraphs(self, soup: BeautifulSoup) -> List[str]:
+        """Extract clean paragraphs from Wikipedia page"""
+        paragraphs = []
+
+        # Find main content area
+        content = soup.find('div', {'id': 'mw-content-text'})
+        if not content:
+            return paragraphs
+
+        # Extract paragraphs
+        for p in content.find_all('p'):
+            text = p.get_text().strip()
+
+            # Clean text
+            text = re.sub(r'\[.*?\]', '', text)  # Remove citations
+            text = re.sub(r'\s+', ' ', text)  # Normalize whitespace
+
+            # Filter out short or empty paragraphs
+            if len(text) > 50 and not text.startswith('Coordonate:'):
+                paragraphs.append(text)
+
+        return paragraphs
+
+    def scrape_technical_glossaries(self) -> List[Dict]:
+        """Scrape technical terms and their translations"""
+
+        # Manual high-quality technical terms
+        technical_terms = [
+            ("algoritm", "algorithm"),
+            ("bază de date", "database"),
+            ("programare", "programming"),
+            ("dezvoltare software", "software development"),
+            ("sistem de operare", "operating system"),
+            ("interfață utilizator", "user interface"),
+            ("securitate cibernetică", "cybersecurity"),
+            ("inteligență artificială", "artificial intelligence"),
+            ("învățare automată", "machine learning"),
+            ("rețea neurală", "neural network"),
+            ("blockchain", "blockchain"),
+            ("criptografie", "cryptography"),
+            ("cloud computing", "cloud computing"),
+            ("big data", "big data"),
+            ("internet of things", "internet of things"),
+            ("realitate virtuală", "virtual reality"),
+            ("realitate augmentată", "augmented reality"),
+            ("analiza datelor", "data analysis"),
+            ("vizualizare date", "data visualization"),
+            ("procesare limbaj natural", "natural language processing")
+        ]
+
+        data = []
+
+        for ro_term, en_term in technical_terms:
+            # Create context sentences
+            contexts = [
+                (f"Acest {ro_term} este foarte eficient.", f"This {en_term} is very efficient."),
+                (f"Implementarea {ro_term} necesită atenție.", f"The implementation of {en_term} requires attention."),
+                (f"Folosim {ro_term} în proiectul nostru.", f"We use {en_term} in our project."),
+                (f"Optimizarea {ro_term} este crucială.", f"Optimization of {en_term} is crucial."),
+                (f"Documentația pentru {ro_term} este completă.", f"The documentation for {en_term} is complete.")
+            ]
+
+            for ro_context, en_context in contexts:
+                data.append({
+                    'source': ro_context,
+                    'target': en_context,
+                    'domain': 'technical_terms',
+                    'source_url': 'manual',
+                    'target_url': 'manual',
+                    'topic': 'glossary'
+                })
+
+        return data
+
+    def save_data(self, data: List[Dict], filename: str):
+        """Save scraped data to JSON file"""
+        output_path = Path(f"data/raw/{filename}")
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+
+        with open(output_path, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+
+        print(f" Saved {len(data)} samples to {output_path}")
+
+
+def main():
+    scraper = TechnicalDocumentScraper()
+
+    print(" Starting data collection...")
+
+    # Scrape Wikipedia articles
+    print(" Scraping Wikipedia articles...")
+    wiki_data = scraper.scrape_wikipedia_tech_articles()
+    scraper.save_data(wiki_data, "wikipedia_technical.json")
+
+    # Scrape technical glossaries
+    print(" Creating technical glossary...")
+    glossary_data = scraper.scrape_technical_glossaries()
+    scraper.save_data(glossary_data, "technical_glossary.json")
+
+    # Combine all data
+    all_data = wiki_data + glossary_data
+    scraper.save_data(all_data, "combined_dataset.json")
+
+    print(f" Total collected: {len(all_data)} translation pairs")
+    print(" Data collection complete!")
+
+
+if __name__ == "__main__":
+    main()
